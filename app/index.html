@@ -1758,6 +1758,36 @@
                       >
                         Generate Instructions PDF
                       </button>
+                      <div style="margin-top: 6px; margin-left: 4px">
+                        <small>Section size (studs)</small>
+                        <select id="instruction-section-size-select" class="custom-select" style="max-width: 180px">
+                          <option value="16">16</option>
+                        </select>
+                      </div>
+                      <div style="margin-top: 6px; margin-left: 4px">
+                        <small>Minimap</small>
+                        <select id="instruction-minimap-mode" class="custom-select" style="max-width: 220px">
+                          <option value="image">Image</option>
+                          <option value="grid">Numbered grid</option>
+                          <option value="off">Off</option>
+                        </select>
+                      </div>
+                      <div class="checkbox" style="margin-top: 6px; margin-left: 4px">
+                        <label>
+                          <input id="instruction-guest-instructions-check" type="checkbox" />
+                          Include guest instructions
+                        </label>
+                      </div>
+                      <div style="margin-top: 6px; margin-left: 4px">
+                        <small>PDF footer</small>
+                        <input
+                          id="instruction-footer-text"
+                          class="form-control"
+                          type="text"
+                          placeholder="Optional footer text"
+                          style="max-width: 420px"
+                        />
+                      </div>
                       <div class="checkbox" style="margin-top: 4px; margin-left: 4px">
                         <label class="checkbox-clickable">
                           <input type="checkbox" class="checkbox-clickable" id="high-quality-instructions-check" />

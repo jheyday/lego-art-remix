@@ -1035,10 +1035,17 @@ function generateInstructionTitlePage(
 
     const radius = scalingFactor / 2;
 
+    const mainX = Math.max(pictureWidth * 0.75, radius * 13);
+
+    const titleY = Math.max(pictureHeight * 0.28, scalingFactor * 2);
+    const subtitleY = Math.max(pictureHeight * 0.34, scalingFactor * 2.5);
+
+    const legendRightEdge = mainX + scalingFactor / 4 + (2 * scalingFactor * width) / plateWidth;
+
     const studMap = getUsedPixelsStudMap(pixelArray);
 
     canvas.height = Math.max(pictureHeight * 1.5, pictureHeight * 0.4 + availableStudHexList.length * radius * 2.5);
-    canvas.width = pictureWidth * 2;
+    canvas.width = Math.max(pictureWidth * 2, legendRightEdge + radius * 2);
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -1047,22 +1054,22 @@ function generateInstructionTitlePage(
         availableStudHexList,
         scalingFactor,
         ctx,
-        pictureWidth * 0.25,
+        mainX - radius * 11,
         pictureHeight * 0.2 - radius,
         pixelType
     );
 
     ctx.fillStyle = "#000000";
     ctx.font = `${scalingFactor * 2}px Arial`;
-    ctx.fillText("Lego Art Remix", pictureWidth * 0.75, pictureHeight * 0.28);
+    ctx.fillText("Lego Art Remix", mainX, titleY);
     ctx.font = `${scalingFactor / 2}px Arial`;
     ctx.fillText(
         `Resolution: ${width} x ${pixelArray.length / (4 * width)}`,
-        pictureWidth * 0.75,
-        pictureHeight * 0.34
+        mainX,
+        subtitleY
     );
 
-    const legendHorizontalOffset = pictureWidth * 0.75;
+    const legendHorizontalOffset = mainX;
     const legendVerticalOffset = pictureHeight * 0.41;
     const numPlates = pixelArray.length / (4 * plateWidth * plateWidth);
     const legendSquareSide = scalingFactor;
@@ -1110,7 +1117,14 @@ function generateInstructionPage(
     canvas,
     plateNumber,
     pixelType,
-    variablePixelPieceDimensions
+    variablePixelPieceDimensions,
+    overallMosaicCanvas,
+    overallWidth,
+    overallHeight,
+    sectionRow,
+    sectionCol,
+    minimapMode,
+    includeGuestInstructions
 ) {
     const ctx = canvas.getContext("2d");
 
@@ -1120,31 +1134,103 @@ function generateInstructionPage(
     const innerPadding = scalingFactor / 12;
     const radius = scalingFactor / 2;
 
+    const mainX = Math.max(pictureWidth * 0.75, radius * 13);
+    const gridTop = Math.max(pictureHeight * 0.2, scalingFactor * 2);
+
+    const resolvedMinimapMode = (minimapMode || "image").toLowerCase();
+    const showMinimap = resolvedMinimapMode !== "off";
+    const miniMapBoxSize = Math.min(pictureWidth * 0.9, scalingFactor * 14);
+    const miniMapY = gridTop + pictureHeight + scalingFactor;
+
+    function getWrappedLines(context, text, maxWidth) {
+        const paragraphs = String(text || "")
+            .split("\n")
+            .map((s) => s.trim());
+        const lines = [];
+        paragraphs.forEach((p) => {
+            if (!p) {
+                lines.push("");
+                return;
+            }
+            const words = p.split(/\s+/);
+            let line = "";
+            words.forEach((w) => {
+                const test = line ? `${line} ${w}` : w;
+                if (context.measureText(test).width <= maxWidth) {
+                    line = test;
+                } else {
+                    if (line) {
+                        lines.push(line);
+                    }
+                    line = w;
+                }
+            });
+            if (line) {
+                lines.push(line);
+            }
+        });
+        return lines;
+    }
+
     const studMap = getUsedPixelsStudMap(pixelArray);
 
-    canvas.height = Math.max(pictureHeight * 1.5, pictureHeight * 0.4 + availableStudHexList.length * radius * 2.5);
-    canvas.width = pictureWidth * 2;
+    const pageStudHexList = availableStudHexList.filter((pixelHex) => (studMap[pixelHex] || 0) > 0);
+
+    const showGuest = !!includeGuestInstructions;
+    const guestFontSize = Math.max(10, Math.round(scalingFactor * 0.38));
+    const guestLineHeight = Math.round(guestFontSize * 1.35);
+    const guestPadding = Math.round(guestFontSize * 0.9);
+    const guestBoxWidth = pictureWidth;
+    const guestBoxX = mainX;
+
+    let guestTextLines = [];
+    let guestBoxHeight = 0;
+    if (showGuest) {
+        ctx.font = `${guestFontSize}px Arial`;
+        const locateText = showMinimap
+            ? "Use the minimap: the orange box shows where this section goes in the full mosaic."
+            : "Use the title page section map to find where this section goes in the full mosaic.";
+        const guestText =
+            `Guest steps (Section ${plateNumber})\n` +
+            `${locateText}\n` +
+            `1. Get one ${plateWidth}x${plateWidth} baseplate (or a building tray).\n` +
+            `2. Build the grid on this page: each dot gets a 1x1 round plate in the shown color.\n` +
+            `3. The number printed on a dot matches the number next to that color in the list on the left.\n` +
+            `4. Double-check as you go: the list also shows how many of each color you need for this section.\n` +
+            `5. When finished, place this section into the mosaic at the highlighted spot. Keep the page upright so “top” matches the top of the mosaic.\n` +
+            `6. Press plates down firmly.`;
+        guestTextLines = getWrappedLines(ctx, guestText, guestBoxWidth - guestPadding * 2);
+        guestBoxHeight = guestPadding * 2 + guestTextLines.length * guestLineHeight;
+    }
+
+    const baseHeight = Math.max(pictureHeight * 1.5, pictureHeight * 0.4 + pageStudHexList.length * radius * 2.5);
+    const contentBottom = showMinimap ? miniMapY + miniMapBoxSize : gridTop + pictureHeight;
+    const guestY = contentBottom + scalingFactor;
+    const guestBottom = showGuest ? guestY + guestBoxHeight : 0;
+    const heightWithMinimap = showMinimap ? Math.max(baseHeight, miniMapY + miniMapBoxSize + radius * 2) : baseHeight;
+    canvas.height = showGuest ? Math.max(heightWithMinimap, guestBottom + radius * 2) : heightWithMinimap;
+    canvas.width = Math.max(pictureWidth * 2, mainX + pictureWidth + radius * 2);
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.rect(pictureWidth * 0.75, pictureHeight * 0.2, pictureWidth, pictureHeight);
+    ctx.rect(mainX, gridTop, pictureWidth, pictureHeight);
     ctx.stroke();
     ctx.fillStyle = "#000000";
-    ctx.fillRect(pictureWidth * 0.75, pictureHeight * 0.2, pictureWidth, pictureHeight);
+    ctx.fillRect(mainX, gridTop, pictureWidth, pictureHeight);
 
     ctx.lineWidth = 5;
     ctx.strokeStyle = "#000000";
     ctx.font = `${scalingFactor}px Arial`;
     ctx.beginPath();
-    ctx.fillText(`Section ${plateNumber}`, pictureWidth * 0.75, pictureHeight * 0.2 - scalingFactor);
+    ctx.fillText(`Section ${plateNumber}`, mainX, gridTop - scalingFactor * 0.4);
     ctx.stroke();
 
     ctx.lineWidth = 1;
 
     const studToNumber = {};
-    availableStudHexList.forEach((stud, i) => {
+    pageStudHexList.forEach((stud, i) => {
         studToNumber[stud] = i + 1;
     });
 
@@ -1159,8 +1245,8 @@ function generateInstructionPage(
                 pixelArray[pixelIndex * 4 + 2]
             );
             ctx.beginPath();
-            const x = pictureWidth * 0.75 + (j * 2 + 1) * radius;
-            const y = pictureHeight * 0.2 + ((i % plateWidth) * 2 + 1) * radius;
+            const x = mainX + (j * 2 + 1) * radius;
+            const y = gridTop + ((i % plateWidth) * 2 + 1) * radius;
             drawPixel(
                 ctx,
                 x - radius,
@@ -1182,8 +1268,8 @@ function generateInstructionPage(
     if (variablePixelPieceDimensions != null) {
         for (let i = 0; i < plateWidth; i++) {
             for (let j = 0; j < plateWidth; j++) {
-                const x = pictureWidth * 0.75 + (j * 2 + 1) * radius;
-                const y = pictureHeight * 0.2 + ((i % plateWidth) * 2 + 1) * radius;
+                const x = mainX + (j * 2 + 1) * radius;
+                const y = gridTop + ((i % plateWidth) * 2 + 1) * radius;
                 const piece = variablePixelPieceDimensions[i][j];
                 if (piece != null) {
                     ctx.strokeStyle = "#888888";
@@ -1206,13 +1292,94 @@ function generateInstructionPage(
 
     drawStudCountForContext(
         studMap,
-        availableStudHexList,
+        pageStudHexList,
         scalingFactor,
         ctx,
-        pictureWidth * 0.25,
-        pictureHeight * 0.2 - radius,
+        mainX - radius * 11,
+        gridTop - radius,
         pixelType
     );
+
+    if (showMinimap && Number.isFinite(overallWidth) && Number.isFinite(overallHeight)) {
+        const cols = Math.ceil(overallWidth / plateWidth);
+        const rows = Math.ceil(overallHeight / plateWidth);
+
+        const mmScale = miniMapBoxSize / Math.max(overallWidth, overallHeight);
+        const mmW = overallWidth * mmScale;
+        const mmH = overallHeight * mmScale;
+        const miniMapX = mainX + (pictureWidth - mmW) / 2;
+
+        if (resolvedMinimapMode === "image" && overallMosaicCanvas != null) {
+            // overallMosaicCanvas is already upscaled by scalingFactor (SCALING_FACTOR)
+            const imgScale = mmScale / scalingFactor;
+            const imgW = overallMosaicCanvas.width * imgScale;
+            const imgH = overallMosaicCanvas.height * imgScale;
+            const imgX = mainX + (pictureWidth - imgW) / 2;
+            ctx.drawImage(
+                overallMosaicCanvas,
+                0,
+                0,
+                overallMosaicCanvas.width,
+                overallMosaicCanvas.height,
+                imgX,
+                miniMapY,
+                imgW,
+                imgH
+            );
+        } else if (resolvedMinimapMode === "grid") {
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(miniMapX, miniMapY, mmW, mmH);
+            ctx.lineWidth = Math.max(1, scalingFactor / 20);
+            ctx.strokeStyle = "#000000";
+            ctx.strokeRect(miniMapX, miniMapY, mmW, mmH);
+
+            const cellW = (plateWidth * mmScale);
+            const cellH = (plateWidth * mmScale);
+            const fontSize = Math.max(8, Math.min(14, cellW * 0.45));
+            ctx.font = `${fontSize}px Arial`;
+            ctx.fillStyle = "#000000";
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const x = miniMapX + c * cellW;
+                    const y = miniMapY + r * cellH;
+                    ctx.strokeStyle = "#000000";
+                    ctx.lineWidth = Math.max(0.5, scalingFactor / 40);
+                    ctx.strokeRect(x, y, cellW, cellH);
+                    const num = r * cols + c + 1;
+                    ctx.fillText(num, x + cellW * 0.25, y + cellH * 0.65);
+                }
+            }
+        }
+
+        if (Number.isFinite(sectionRow) && Number.isFinite(sectionCol)) {
+            const sectionX = miniMapX + sectionCol * plateWidth * mmScale;
+            const sectionY = miniMapY + sectionRow * plateWidth * mmScale;
+            const sectionW = plateWidth * mmScale;
+            const sectionH = plateWidth * mmScale;
+            ctx.lineWidth = Math.max(2, scalingFactor / 10);
+            ctx.strokeStyle = "#ff4c00";
+            ctx.beginPath();
+            ctx.rect(sectionX, sectionY, sectionW, sectionH);
+            ctx.stroke();
+        }
+    }
+
+    if (showGuest) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#000000";
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.rect(guestBoxX, guestY, guestBoxWidth, guestBoxHeight);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = "#000000";
+        ctx.font = `${guestFontSize}px Arial`;
+        guestTextLines.forEach((line, idx) => {
+            ctx.fillText(line, guestBoxX + guestPadding, guestY + guestPadding + (idx + 1) * guestLineHeight);
+        });
+    }
 }
 
 function getDepthSubPixelMatrix(pixelArray, totalWidth, horizontalOffset, verticalOffset, width, height) {
@@ -1489,6 +1656,10 @@ function generateDepthInstructionTitlePage(
     pictureWidth = usedPlatesMatrices[0][0].length * scalingFactor;
     pictureHeight = usedPlatesMatrices[0][0][0].length * scalingFactor;
 
+    const mainX = Math.max(pictureWidth * 0.75, scalingFactor * 6.5);
+
+    const legendRightEdge = mainX + scalingFactor / 4 + (2 * scalingFactor * targetResolution[0]) / plateWidth;
+
     const usedDepthParts = getUsedDepthPartsMap(usedPlatesMatrices.flat());
     const sortedDepthParts = Object.keys(usedDepthParts);
     sortedDepthParts.sort((part1, part2) => {
@@ -1502,28 +1673,28 @@ function generateDepthInstructionTitlePage(
         pictureHeight * 1.5 + (pictureHeight + betweenLevelPicturePadding) * (usedPlatesMatrices[0].length - 1),
         pictureHeight * 0.4 + sortedDepthParts.length * (scalingFactor / 2) * 2.5
     );
-    canvas.width = pictureWidth * 2;
+    canvas.width = Math.max(pictureWidth * 2, legendRightEdge + scalingFactor);
 
     drawDepthPlatesCountForContext(
         usedDepthParts,
         scalingFactor,
         ctx,
-        pictureWidth * 0.25,
+        mainX - scalingFactor * 5.5,
         pictureHeight * 0.2 - scalingFactor / 2
     );
 
     ctx.fillStyle = "#000000";
     ctx.font = `${scalingFactor * 2}px Arial`;
-    ctx.fillText("Lego Art Remix", pictureWidth * 0.75, pictureHeight * 0.28);
+    ctx.fillText("Lego Art Remix", mainX, pictureHeight * 0.28);
     ctx.font = `${scalingFactor / 2}px Arial`;
-    ctx.fillText(`Depth Instructions`, pictureWidth * 0.75, pictureHeight * 0.34);
+    ctx.fillText(`Depth Instructions`, mainX, pictureHeight * 0.34);
     ctx.fillText(
         `Resolution: ${targetResolution[0]} x ${targetResolution[1]}`,
-        pictureWidth * 0.75,
+        mainX,
         pictureHeight * 0.37
     );
 
-    const legendHorizontalOffset = pictureWidth * 0.75;
+    const legendHorizontalOffset = mainX;
     const legendVerticalOffset = pictureHeight * 0.41;
     const numPlates = usedPlatesMatrices.length;
     const legendSquareSide = scalingFactor;
@@ -1569,6 +1740,9 @@ function generateDepthInstructionPage(perDepthLevelMatrices, scalingFactor, canv
     pictureWidth = perDepthLevelMatrices[0].length * scalingFactor;
     pictureHeight = perDepthLevelMatrices[0][0].length * scalingFactor;
 
+    const mainX = Math.max(pictureWidth * 0.75, scalingFactor * 6.5);
+    const headerY = Math.max(pictureHeight * 0.2 - scalingFactor, scalingFactor * 1.5);
+
     const radius = scalingFactor / 2;
 
     const usedDepthParts = getUsedDepthPartsMap(perDepthLevelMatrices);
@@ -1584,7 +1758,7 @@ function generateDepthInstructionPage(perDepthLevelMatrices, scalingFactor, canv
         pictureHeight * 1.5 + (pictureHeight + betweenLevelPicturePadding) * (perDepthLevelMatrices.length - 1),
         pictureHeight * 0.4 + sortedDepthParts.length * radius * 2.5
     );
-    canvas.width = pictureWidth * 2;
+    canvas.width = Math.max(pictureWidth * 2, mainX + pictureWidth + scalingFactor);
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -1595,8 +1769,8 @@ function generateDepthInstructionPage(perDepthLevelMatrices, scalingFactor, canv
     ctx.beginPath();
     ctx.fillText(
         `Section ${plateNumber} Depth Plating Instructions`,
-        pictureWidth * 0.75,
-        pictureHeight * 0.2 - scalingFactor
+        mainX,
+        headerY
     );
     ctx.stroke();
 
@@ -1605,7 +1779,7 @@ function generateDepthInstructionPage(perDepthLevelMatrices, scalingFactor, canv
     ctx.font = `${scalingFactor * 0.75}px Arial`;
 
     for (let depthIndex = 0; depthIndex < perDepthLevelMatrices.length; depthIndex++) {
-        const horizontalOffset = pictureWidth * 0.75;
+        const horizontalOffset = mainX;
         const verticalOffset = pictureHeight * 0.25 + (pictureHeight + betweenLevelPicturePadding) * depthIndex;
         ctx.lineWidth = 5;
         ctx.beginPath();
@@ -1616,7 +1790,7 @@ function generateDepthInstructionPage(perDepthLevelMatrices, scalingFactor, canv
         ctx.fillRect(horizontalOffset, verticalOffset, pictureWidth, pictureHeight);
 
         ctx.beginPath();
-        ctx.fillText(`Level ${depthIndex + 1}`, pictureWidth * 0.75, verticalOffset - scalingFactor * 0.5);
+        ctx.fillText(`Level ${depthIndex + 1}`, mainX, verticalOffset - scalingFactor * 0.5);
         ctx.stroke();
 
         const partMatrix = perDepthLevelMatrices[depthIndex];
@@ -1667,7 +1841,7 @@ function generateDepthInstructionPage(perDepthLevelMatrices, scalingFactor, canv
         usedDepthParts,
         scalingFactor,
         ctx,
-        pictureWidth * 0.25,
+        mainX - scalingFactor * 5.5,
         pictureHeight * 0.2 - radius
     );
 }
