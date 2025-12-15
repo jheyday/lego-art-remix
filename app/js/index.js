@@ -1140,7 +1140,7 @@ function getColorSquare(hex) {
     return result;
 }
 
-function getColorSelectorDropdown(tooltipPosition) {
+function getColorSelectorDropdown(tooltipPosition, onSelect) {
     if (!tooltipPosition) {
         tooltipPosition = "left";
     }
@@ -1174,10 +1174,15 @@ function getColorSelectorDropdown(tooltipPosition) {
         option.addEventListener("click", () => {
             button.innerHTML = "";
             button.appendChild(getColorSquare(color.hex));
+            button.value = color.hex;
             container.setAttribute("title", color.name);
             $('[data-toggle="tooltip"]').tooltip("dispose");
             $('[data-toggle="tooltip"]').tooltip();
-            runCustomStudMap();
+            if (typeof onSelect === "function") {
+                onSelect(color.hex, color);
+            } else {
+                runCustomStudMap();
+            }
         });
         dropdown.appendChild(option);
     });
@@ -1191,7 +1196,7 @@ function getColorSelectorDropdown(tooltipPosition) {
     return container;
 }
 
-const paintbrushDropdown = getColorSelectorDropdown("top");
+const paintbrushDropdown = getColorSelectorDropdown("top", () => {});
 paintbrushDropdown.children[0].id = "paintbrush-color-dropdown";
 paintbrushDropdown.children[0].className = "btn paintbrush-controls-button";
 paintbrushDropdown.style = "height: 100%;";
