@@ -37,6 +37,9 @@ const HIGH_DPI = 96;
 const interactionSelectors = [
     "input-image-selector",
     "input-image-selector-hidden",
+    "save-mosaic-button",
+    "load-mosaic-button",
+    "load-mosaic-file-input",
     "mix-in-stud-map-button",
     "width-slider",
     "height-slider",
@@ -107,6 +110,8 @@ const CNN_INPUT_IMAGE_WIDTH = 256;
 const CNN_INPUT_IMAGE_HEIGHT = 256;
 
 let inputImage = null;
+let inputImageOriginalDataUrl = null;
+let inputDepthOriginalDataUrl = null;
 
 const inputCanvas = document.getElementById("input-canvas");
 const inputCanvasContext = inputCanvas.getContext("2d");
@@ -1684,12 +1689,83 @@ Array.from(document.getElementById("paintbrush-tool-selection-dropdown-options")
     const value = item.id;
     item.addEventListener("click", () => {
         selectedPaintbrushTool = value;
-        document.getElementById("paintbrush-color-dropdown").disabled = value !== "paintbrush-tool-dropdown-option";
+        document.getElementById("paintbrush-color-dropdown").disabled = ![
+            "paintbrush-tool-dropdown-option",
+            "bucket-tool-dropdown-option",
+        ].includes(value);
         document.getElementById("paintbrush-tool-selection-dropdown").innerHTML = item.children[0].innerHTML;
     });
 });
 
 let step3PixelArrayForEraser = null;
+
+function getStep3VisibleHexAt(row, col) {
+    if (row < 0 || col < 0 || row >= targetResolution[1] || col >= targetResolution[0]) {
+        return null;
+    }
+
+    const pixelIndex = 4 * (row * targetResolution[0] + col);
+    if (!step3CanvasPixelsForHover || pixelIndex + 2 >= step3CanvasPixelsForHover.length) {
+        return null;
+    }
+
+    const r = overridePixelArray[pixelIndex] != null ? overridePixelArray[pixelIndex] : step3CanvasPixelsForHover[pixelIndex];
+    const g =
+        overridePixelArray[pixelIndex + 1] != null
+            ? overridePixelArray[pixelIndex + 1]
+            : step3CanvasPixelsForHover[pixelIndex + 1];
+    const b =
+        overridePixelArray[pixelIndex + 2] != null
+            ? overridePixelArray[pixelIndex + 2]
+            : step3CanvasPixelsForHover[pixelIndex + 2];
+    return rgbToHex(r, g, b);
+}
+
+function bucketFillStep3(row, col, fillHex) {
+    const targetHex = getStep3VisibleHexAt(row, col);
+    if (!targetHex || !fillHex || targetHex === fillHex) {
+        return;
+    }
+
+    const width = targetResolution[0];
+    const height = targetResolution[1];
+    const fillRGB = hexToRgb(fillHex);
+
+    const visited = new Uint8Array(width * height);
+    const queue = [[row, col]];
+    visited[row * width + col] = 1;
+
+    while (queue.length) {
+        const [r, c] = queue.pop();
+        const currentHex = getStep3VisibleHexAt(r, c);
+        if (currentHex !== targetHex) {
+            continue;
+        }
+
+        const pixelIndex = 4 * (r * width + c);
+        overridePixelArray[pixelIndex] = fillRGB[0];
+        overridePixelArray[pixelIndex + 1] = fillRGB[1];
+        overridePixelArray[pixelIndex + 2] = fillRGB[2];
+
+        const neighbors = [
+            [r - 1, c],
+            [r + 1, c],
+            [r, c - 1],
+            [r, c + 1],
+        ];
+        for (const [nr, nc] of neighbors) {
+            if (nr < 0 || nc < 0 || nr >= height || nc >= width) {
+                continue;
+            }
+            const idx = nr * width + nc;
+            if (visited[idx]) {
+                continue;
+            }
+            visited[idx] = 1;
+            queue.push([nr, nc]);
+        }
+    }
+}
 
 function onMouseMoveOverStep3Canvas(event) {
     if (!document.getElementById("universal-loading-progress").hidden) {
@@ -1728,6 +1804,13 @@ function onMouseMoveOverStep3Canvas(event) {
             overridePixelArray[pixelIndex] = colorRGB[0];
             overridePixelArray[pixelIndex + 1] = colorRGB[1];
             overridePixelArray[pixelIndex + 2] = colorRGB[2];
+        } else if (selectedPaintbrushTool === "bucket-tool-dropdown-option") {
+            // Fill a contiguous region of the currently visible color.
+            bucketFillStep3(row, col, activePaintbrushHex);
+            activePaintbrushHex = null; // prevent repeated fills on mousemove
+            disableInteraction();
+            runStep3();
+            wasPaintbrushUsed = false;
         } else if (selectedPaintbrushTool === "eraser-tool-dropdown-option") {
             // null out the override
             if (
@@ -2801,6 +2884,7 @@ const SERIALIZE_EDGE_LENGTH = 512;
 function handleInputImage(e, dontClearDepth, dontLog) {
     const reader = new FileReader();
     reader.onload = function (event) {
+        inputImageOriginalDataUrl = event.target.result;
         inputImage = new Image();
         inputImage.onload = function () {
             inputCanvas.width = SERIALIZE_EDGE_LENGTH;
@@ -2871,6 +2955,7 @@ function handleInputDepthMapImage(e) {
     const reader = new FileReader();
     overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
     reader.onload = function (event) {
+        inputDepthOriginalDataUrl = event.target.result;
         inputImage = new Image();
         inputImage.onload = function () {
             inputDepthCanvas.width = SERIALIZE_EDGE_LENGTH;
@@ -3000,6 +3085,350 @@ depthImageSelectorHidden.addEventListener("change", handleInputDepthMapImage, fa
 document.getElementById("input-depth-image-selector").addEventListener("click", () => {
     depthImageSelectorHidden.click();
 });
+
+function getCurrentMosaicState() {
+    const cropperData = inputImageCropper != null ? inputImageCropper.getData(true) : null;
+    const cropperCanvasData = inputImageCropper != null ? inputImageCropper.getCanvasData() : null;
+    const cropperCropBoxData = inputImageCropper != null ? inputImageCropper.getCropBoxData() : null;
+    const depthThresholds = [...document.getElementById("depth-threshold-sliders-containers").children].map((slider) =>
+        Number(slider.value)
+    );
+
+    const variablePixelDimensionsChecked = [...document.getElementById("pixel-dimensions-container").children]
+        .map((div) => div.children[0])
+        .map((label) => label.children[0])
+        .filter((input) => input.checked)
+        .map((input) => input.name);
+
+    const depthPlatesChecked = [...document.getElementById("depth-plates-container").children]
+        .map((div) => div.children[0])
+        .map((label) => label.children[0])
+        .filter((input) => input.checked)
+        .map((input) => input.name);
+
+    const distanceFunctionKey = Object.keys(colorDistanceFunctionsInfo).find(
+        (key) => colorDistanceFunctionsInfo[key].func === colorDistanceFunction
+    );
+
+    return {
+        schemaVersion: 3,
+        appVersion: VERSION_NUMBER,
+        depthEnabled,
+        targetResolution: [Number(targetResolution[0]), Number(targetResolution[1])],
+        selectedPixelPartNumber,
+        quantizationAlgorithm,
+        selectedTiebreakTechnique,
+        selectedInterpolationAlgorithm,
+        distanceFunctionKey: distanceFunctionKey || defaultDistanceFunctionKey,
+
+        sliders: {
+            width: Number(document.getElementById("width-slider").value),
+            height: Number(document.getElementById("height-slider").value),
+            hue: Number(document.getElementById("hue-slider").value),
+            saturation: Number(document.getElementById("saturation-slider").value),
+            value: Number(document.getElementById("value-slider").value),
+            brightness: Number(document.getElementById("brightness-slider").value),
+            contrast: Number(document.getElementById("contrast-slider").value),
+            colorTieGroupingFactor: Number(document.getElementById("color-tie-grouping-factor-slider").value),
+            numDepthLevels: Number(document.getElementById("num-depth-levels-slider").value),
+            depthThresholds,
+        },
+        checks: {
+            infinitePieceCount: Boolean(document.getElementById("infinite-piece-count-check").checked),
+            highQualityColorInstructions: Boolean(document.getElementById("high-quality-instructions-check").checked),
+            highQualityDepthInstructions: Boolean(
+                document.getElementById("high-quality-depth-instructions-check").checked
+            ),
+        },
+        studMap: {
+            studMap: selectedStudMap,
+            sortedStuds: selectedSortedStuds,
+            fullSetName: selectedFullSetName,
+        },
+        overridePixelArray,
+        overrideDepthPixelArray,
+        variablePixelDimensionsChecked,
+        depthPlatesChecked,
+        cropperData,
+        cropperCanvasData,
+        cropperCropBoxData,
+        originalInputImageDataUrl: inputImageOriginalDataUrl,
+        originalInputDepthDataUrl: inputDepthOriginalDataUrl,
+        inputImageDataUrl: inputCanvas.toDataURL("image/png"),
+        inputDepthDataUrl: inputDepthCanvas.toDataURL("image/png"),
+    };
+}
+
+function downloadMosaicState() {
+    const state = getCurrentMosaicState();
+    const json = JSON.stringify(state);
+    const url = window.URL.createObjectURL(new Blob([json], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "lego-art-remix-mosaic.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => window.URL.revokeObjectURL(url), 0);
+}
+
+async function applyMosaicState(state) {
+    if (!state || ![1, 2, 3].includes(state.schemaVersion)) {
+        return;
+    }
+
+    disableInteraction();
+
+    const savedOverridePixelArray = Array.isArray(state.overridePixelArray) ? state.overridePixelArray : null;
+    const savedOverrideDepthPixelArray = Array.isArray(state.overrideDepthPixelArray) ? state.overrideDepthPixelArray : null;
+
+    const width = Number(state.sliders?.width ?? state.targetResolution?.[0] ?? 48);
+    const height = Number(state.sliders?.height ?? state.targetResolution?.[1] ?? 48);
+
+    document.getElementById("width-slider").value = width;
+    document.getElementById("height-slider").value = height;
+    document.getElementById("width-text").innerHTML = width;
+    document.getElementById("height-text").innerHTML = height;
+    targetResolution = [width, height];
+    document.getElementById("width-text").title = `${(targetResolution[0] * PIXEL_WIDTH_CM).toFixed(1)} cm, ${(
+        targetResolution[0] *
+        PIXEL_WIDTH_CM *
+        INCHES_IN_CM
+    ).toFixed(1)}″`;
+    document.getElementById("height-text").title = `${(targetResolution[1] * PIXEL_WIDTH_CM).toFixed(1)} cm, ${(
+        targetResolution[1] *
+        PIXEL_WIDTH_CM *
+        INCHES_IN_CM
+    ).toFixed(1)}″`;
+
+    if (state.depthEnabled && !depthEnabled) {
+        enableDepth();
+    }
+
+    document.getElementById("hue-slider").value = Number(state.sliders?.hue ?? 0);
+    document.getElementById("saturation-slider").value = Number(state.sliders?.saturation ?? 0);
+    document.getElementById("value-slider").value = Number(state.sliders?.value ?? 0);
+    document.getElementById("brightness-slider").value = Number(state.sliders?.brightness ?? 0);
+    document.getElementById("contrast-slider").value = Number(state.sliders?.contrast ?? 0);
+    document.getElementById("color-tie-grouping-factor-slider").value = Number(state.sliders?.colorTieGroupingFactor ?? 1);
+
+    document.getElementById("hue-text").innerHTML = document.getElementById("hue-slider").value + "<span>&#176;</span>";
+    document.getElementById("saturation-text").innerHTML = document.getElementById("saturation-slider").value + "%";
+    document.getElementById("value-text").innerHTML = document.getElementById("value-slider").value + "%";
+    document.getElementById("brightness-text").innerHTML =
+        (document.getElementById("brightness-slider").value > 0 ? "+" : "") + document.getElementById("brightness-slider").value;
+    document.getElementById("contrast-text").innerHTML =
+        (document.getElementById("contrast-slider").value > 0 ? "+" : "") + document.getElementById("contrast-slider").value;
+    document.getElementById("color-tie-grouping-factor-text").innerHTML = document.getElementById(
+        "color-tie-grouping-factor-slider"
+    ).value;
+
+    document.getElementById("infinite-piece-count-check").checked = Boolean(state.checks?.infinitePieceCount);
+    document.getElementById("high-quality-instructions-check").checked = Boolean(state.checks?.highQualityColorInstructions);
+    document.getElementById("high-quality-depth-instructions-check").checked = Boolean(state.checks?.highQualityDepthInstructions);
+
+    const newDistanceKey = state.distanceFunctionKey || defaultDistanceFunctionKey;
+    if (colorDistanceFunctionsInfo[newDistanceKey]) {
+        document.getElementById("distance-function-button").innerHTML = colorDistanceFunctionsInfo[newDistanceKey].name;
+        colorDistanceFunction = colorDistanceFunctionsInfo[newDistanceKey].func;
+    }
+
+    if (state.quantizationAlgorithm && quantizationAlgorithmsInfo[state.quantizationAlgorithm]) {
+        quantizationAlgorithm = state.quantizationAlgorithm;
+        document.getElementById("quantization-algorithm-button").innerHTML = quantizationAlgorithmsInfo[quantizationAlgorithm].name;
+        document.getElementById("color-ties-resolution-section").hidden = quantizationAlgorithm != "twoPhase";
+        const isTraditionalErrorDithering = Object.keys(quantizationAlgorithmToTraditionalDitheringKernel).includes(
+            quantizationAlgorithm
+        );
+        [...document.getElementsByClassName("traditional-dithering-algorithm-warning")].forEach(
+            (item) => (item.hidden = !isTraditionalErrorDithering)
+        );
+        updateForceInfinitePieceCountText();
+    }
+
+    if (state.selectedTiebreakTechnique) {
+        selectedTiebreakTechnique = state.selectedTiebreakTechnique;
+        const technique = TIEBREAK_TECHNIQUES.find((t) => t.value === selectedTiebreakTechnique);
+        if (technique) {
+            document.getElementById("color-ties-resolution-button").innerHTML = "Strategy: " + technique.name;
+        }
+    }
+
+    if (state.selectedInterpolationAlgorithm) {
+        selectedInterpolationAlgorithm = state.selectedInterpolationAlgorithm;
+        const algo = INTERPOLATION_ALGORITHMS.find((a) => a.value === selectedInterpolationAlgorithm);
+        if (algo) {
+            document.getElementById("interpolation-algorithm-button").innerHTML = algo.name;
+        }
+    }
+
+    if (state.selectedPixelPartNumber != null) {
+        selectedPixelPartNumber = state.selectedPixelPartNumber;
+        const part = PIXEL_TYPE_OPTIONS.find((p) => p.number === selectedPixelPartNumber);
+        if (part) {
+            document.getElementById("bricklink-piece-button").innerHTML = part.name;
+        }
+        const isVariable = ("" + selectedPixelPartNumber).match("^variable.*$");
+        document.getElementById("pixel-dimensions-container-wrapper").hidden = !isVariable;
+        if (isVariable) {
+            [...document.getElementById("pixel-dimensions-container").children].forEach((input) => {
+                const className = input.className;
+                const uniqueVariablePixelName = selectedPixelPartNumber.replace("variable_", "");
+                input.hidden = !className.includes(uniqueVariablePixelName);
+            });
+        }
+        onInfinitePieceCountChange();
+        updateForceInfinitePieceCountText();
+    }
+
+    if (state.studMap?.studMap && state.studMap?.sortedStuds) {
+        populateCustomStudSelectors(
+            {
+                studMap: state.studMap.studMap,
+                sortedStuds: state.studMap.sortedStuds,
+            },
+            false
+        );
+        selectedFullSetName = state.studMap.fullSetName || "Custom";
+        runCustomStudMap(true);
+    }
+
+    const numDepthLevels = Number(
+        state.sliders?.numDepthLevels ?? document.getElementById("num-depth-levels-slider").value
+    );
+    document.getElementById("num-depth-levels-slider").value = numDepthLevels;
+
+    if (Array.isArray(state.variablePixelDimensionsChecked)) {
+        [...document.getElementById("pixel-dimensions-container").children]
+            .map((div) => div.children[0])
+            .map((label) => label.children[0])
+            .forEach((input) => {
+                input.checked = state.variablePixelDimensionsChecked.includes(input.name);
+            });
+    }
+
+    if (Array.isArray(state.depthPlatesChecked)) {
+        [...document.getElementById("depth-plates-container").children]
+            .map((div) => div.children[0])
+            .map((label) => label.children[0])
+            .forEach((input) => {
+                input.checked = state.depthPlatesChecked.includes(input.name);
+            });
+    }
+
+    if (state.depthEnabled) {
+        const depthDataUrlToLoad = state.originalInputDepthDataUrl || state.inputDepthDataUrl;
+        inputDepthOriginalDataUrl = state.originalInputDepthDataUrl || null;
+        if (depthDataUrlToLoad) {
+            const depthBlob = await (await fetch(depthDataUrlToLoad)).blob();
+            const depthUrl = URL.createObjectURL(depthBlob);
+            await new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    inputDepthCanvas.width = SERIALIZE_EDGE_LENGTH;
+                    inputDepthCanvas.height = SERIALIZE_EDGE_LENGTH;
+                    inputDepthCanvasContext.drawImage(img, 0, 0, SERIALIZE_EDGE_LENGTH, SERIALIZE_EDGE_LENGTH);
+                    URL.revokeObjectURL(depthUrl);
+                    resolve();
+                };
+                img.src = depthUrl;
+            });
+        }
+    }
+
+    const imageDataUrlToLoad = state.originalInputImageDataUrl || state.inputImageDataUrl;
+    if (imageDataUrlToLoad) {
+        const colorBlob = await (await fetch(imageDataUrlToLoad)).blob();
+        const e = {
+            target: {
+                files: [colorBlob],
+            },
+        };
+        handleInputImage(e, true, true);
+    }
+
+    const start = Date.now();
+    while (inputImageCropper == null && Date.now() - start < 7000) {
+        await new Promise((r) => setTimeout(r, 25));
+    }
+
+    // Cropper needs a moment after initialization to compute container/canvas geometry.
+    // Without this, restoring pan/zoom can be slightly off.
+    await new Promise((r) => setTimeout(r, 50));
+
+    const cropperCanvasData = state.cropperCanvasData;
+    const cropperData = state.cropperData;
+    const cropperCropBoxData = state.cropperCropBoxData;
+    if (inputImageCropper != null) {
+        try {
+            if (cropperData != null) {
+                inputImageCropper.setData(cropperData);
+            }
+            if (cropperCanvasData != null) {
+                inputImageCropper.setCanvasData(cropperCanvasData);
+            }
+            if (cropperCropBoxData != null) {
+                inputImageCropper.setCropBoxData(cropperCropBoxData);
+            }
+        } catch (_e) {
+            // best-effort restore
+        }
+    }
+
+    if (state.depthEnabled) {
+        onDepthMapCountChange();
+        const restoredThresholds = state.sliders?.depthThresholds;
+        if (Array.isArray(restoredThresholds)) {
+            [...document.getElementById("depth-threshold-sliders-containers").children].forEach((slider, i) => {
+                if (restoredThresholds[i] != null) {
+                    slider.value = Number(restoredThresholds[i]);
+                }
+            });
+        }
+    }
+
+    overridePixelArray =
+        savedOverridePixelArray || new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
+    overrideDepthPixelArray =
+        savedOverrideDepthPixelArray || new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
+
+    runStep3();
+}
+
+document.getElementById("save-mosaic-button").addEventListener("click", () => {
+    try {
+        downloadMosaicState();
+    } catch (_e) {
+        enableInteraction();
+    }
+});
+
+document.getElementById("load-mosaic-button").addEventListener("click", () => {
+    document.getElementById("load-mosaic-file-input").click();
+});
+
+document.getElementById("load-mosaic-file-input").addEventListener(
+    "change",
+    (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) {
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = async () => {
+            try {
+                const state = JSON.parse(reader.result);
+                await applyMosaicState(state);
+            } catch (_e) {
+                enableInteraction();
+            } finally {
+                document.getElementById("load-mosaic-file-input").value = null;
+            }
+        };
+        reader.readAsText(file);
+    },
+    false
+);
 
 window.addEventListener("appinstalled", () => {
     perfLoggingDatabase.ref("pwa-install-count/total").transaction(incrementTransaction);

@@ -79,6 +79,7 @@
 
       #step-3-canvas-upscaled {
         /* cursor: crosshair; TODO: Better cursor*/
+        cursor: crosshair;
       }
 
       .card {
@@ -1068,6 +1069,15 @@
                         </span>
                         Eraser
                       </a>
+                      <a class="dropdown-item btn" id="bucket-tool-dropdown-option">
+                        <span>
+                          <svg width="16" height="16" fill="currentColor" class="bi bi-bucket" viewBox="0 0 16 16">
+                            <path d="M2 5h12l-1 10H3L2 5z" />
+                            <path d="M5 5V3a3 3 0 0 1 6 0v2h-1V3a2 2 0 0 0-4 0v2H5z" />
+                          </svg>
+                        </span>
+                        Bucket
+                      </a>
                       <a class="dropdown-item btn" id="dropdown-tool-dropdown-option">
                         <span>
                           <svg width="16" height="16" fill="currentColor" class="bi bi-pencil-fill" viewBox="0 0 16 16">
@@ -2015,6 +2025,13 @@
             <div style="margin-top: 12px">
               <button class="btn btn-success" type="button" id="input-image-selector" disabled>
                 Select Input Image
+              </button>
+            </div>
+            <input type="file" id="load-mosaic-file-input" name="load-mosaic-file-input" accept="application/json" hidden />
+            <div style="margin-top: 6px">
+              <button class="btn btn-info" type="button" id="save-mosaic-button" disabled>Save Mosaic</button>
+              <button class="btn btn-info" type="button" id="load-mosaic-button" disabled style="margin-left: 4px">
+                Load Mosaic
               </button>
             </div>
           </span>
