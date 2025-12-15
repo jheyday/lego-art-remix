@@ -980,7 +980,8 @@ function drawStudCountForContext(
     pixelType
 ) {
     const radius = scalingFactor / 2;
-    ctx.font = `${scalingFactor / 2}px Arial`;
+    const studNumberFontSize = Math.max(8, Math.round(scalingFactor * 0.55));
+    ctx.font = `${studNumberFontSize}px Arial`;
     availableStudHexList.forEach((pixelHex, i) => {
         const number = i + 1;
         ctx.beginPath();
@@ -995,15 +996,29 @@ function drawStudCountForContext(
             inverseHex(pixelHex),
             PIXEL_TYPE_TO_FLATTENED[pixelType]
         );
-        ctx.fillStyle = inverseHex(pixelHex);
-        ctx.fillText(number, x - (scalingFactor * (1 + Math.floor(number / 2) / 6)) / 8, y + scalingFactor / 8);
+
+        const rgb = hexToRgb(pixelHex);
+        const luminance = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+        const fill = luminance > 140 ? "#000000" : "#FFFFFF";
+        const stroke = luminance > 140 ? "#FFFFFF" : "#000000";
+
+        ctx.save();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.lineWidth = Math.max(2, Math.round(scalingFactor * 0.08));
+        ctx.strokeStyle = stroke;
+        ctx.fillStyle = fill;
+        ctx.strokeText(String(number), x, y);
+        ctx.fillText(String(number), x, y);
+        ctx.restore();
+
         ctx.fillStyle = "#000000";
         if (!("" + pixelType).match("^variable.*$")) {
             ctx.fillText(`X ${studMap[pixelHex] || 0}`, x + radius * 1.5, y);
         }
         ctx.font = `${scalingFactor / 2.5}px Arial`;
         ctx.fillText(HEX_TO_COLOR_NAME[pixelHex] || pixelHex, x + radius * 1.5, y + scalingFactor / 2.5);
-        ctx.font = `${scalingFactor / 2}px Arial`;
+        ctx.font = `${studNumberFontSize}px Arial`;
     });
 
     ctx.lineWidth = 5;
@@ -1137,6 +1152,18 @@ function generateInstructionPage(
     const mainX = Math.max(pictureWidth * 0.75, radius * 13);
     const gridTop = Math.max(pictureHeight * 0.2, scalingFactor * 2);
 
+    function indexToLetters(idx) {
+        // 0 -> A, 25 -> Z, 26 -> AA, ...
+        let n = idx + 1;
+        let s = "";
+        while (n > 0) {
+            n -= 1;
+            s = String.fromCharCode(65 + (n % 26)) + s;
+            n = Math.floor(n / 26);
+        }
+        return s;
+    }
+
     const resolvedMinimapMode = (minimapMode || "image").toLowerCase();
     const showMinimap = resolvedMinimapMode !== "off";
     const miniMapBoxSize = Math.min(pictureWidth * 0.9, scalingFactor * 14);
@@ -1227,6 +1254,34 @@ function generateInstructionPage(
     ctx.fillText(`Section ${plateNumber}`, mainX, gridTop - scalingFactor * 0.4);
     ctx.stroke();
 
+    const coordFontSize = Math.max(8, Math.round(scalingFactor * 0.35));
+    const coordStep = plateWidth > 32 ? 4 : plateWidth > 20 ? 2 : 1;
+    const coordTopY = gridTop - radius * 0.45;
+    const coordBottomY = gridTop + pictureHeight + radius * 0.45;
+    const coordLeftX = mainX - radius * 0.6;
+    const coordRightX = mainX + pictureWidth + radius * 0.6;
+
+    ctx.save();
+    ctx.fillStyle = "#000000";
+    ctx.font = `${coordFontSize}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    for (let j = 0; j < plateWidth; j += coordStep) {
+        const label = String(j + 1);
+        const x = mainX + (j * 2 + 1) * radius;
+        ctx.fillText(label, x, coordTopY);
+        ctx.fillText(label, x, coordBottomY);
+    }
+
+    for (let i = 0; i < plateWidth; i += coordStep) {
+        const label = String(i + 1);
+        const y = gridTop + (i * 2 + 1) * radius;
+        ctx.fillText(label, coordLeftX, y);
+        ctx.fillText(label, coordRightX, y);
+    }
+    ctx.restore();
+
     ctx.lineWidth = 1;
 
     const studToNumber = {};
@@ -1234,8 +1289,10 @@ function generateInstructionPage(
         studToNumber[stud] = i + 1;
     });
 
-    ctx.font = `${scalingFactor / 2}px Arial`;
+    const studNumberFontSize = Math.max(8, Math.round(scalingFactor * 0.55));
+    ctx.font = `${studNumberFontSize}px Arial`;
 
+    // Draw studs first
     for (let i = 0; i < plateWidth; i++) {
         for (let j = 0; j < plateWidth; j++) {
             const pixelIndex = i * plateWidth + j;
@@ -1244,7 +1301,6 @@ function generateInstructionPage(
                 pixelArray[pixelIndex * 4 + 1],
                 pixelArray[pixelIndex * 4 + 2]
             );
-            ctx.beginPath();
             const x = mainX + (j * 2 + 1) * radius;
             const y = gridTop + ((i % plateWidth) * 2 + 1) * radius;
             drawPixel(
@@ -1256,14 +1312,29 @@ function generateInstructionPage(
                 inverseHex(pixelHex),
                 PIXEL_TYPE_TO_FLATTENED[pixelType]
             );
-            ctx.fillStyle = inverseHex(pixelHex);
-            ctx.fillText(
-                studToNumber[pixelHex],
-                x - (scalingFactor * (1 + Math.floor(studToNumber[pixelHex] / 2) / 6)) / 8,
-                y + scalingFactor / 8
-            );
         }
     }
+
+    // Subtle helper grid every 2 studs (for easier locating)
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = Math.max(1, Math.round(scalingFactor / 24));
+
+    for (let k = 0; k <= plateWidth; k += 2) {
+        const x = mainX + 2 * radius * k;
+        ctx.beginPath();
+        ctx.moveTo(x, gridTop);
+        ctx.lineTo(x, gridTop + pictureHeight);
+        ctx.stroke();
+
+        const y = gridTop + 2 * radius * k;
+        ctx.beginPath();
+        ctx.moveTo(mainX, y);
+        ctx.lineTo(mainX + pictureWidth, y);
+        ctx.stroke();
+    }
+    ctx.restore();
 
     if (variablePixelPieceDimensions != null) {
         for (let i = 0; i < plateWidth; i++) {
@@ -1287,6 +1358,36 @@ function generateInstructionPage(
                     ctx.stroke();
                 }
             }
+        }
+    }
+
+    // Draw stud numbers last (on top of grid and outlines)
+    for (let i = 0; i < plateWidth; i++) {
+        for (let j = 0; j < plateWidth; j++) {
+            const pixelIndex = i * plateWidth + j;
+            const pixelHex = rgbToHex(
+                pixelArray[pixelIndex * 4],
+                pixelArray[pixelIndex * 4 + 1],
+                pixelArray[pixelIndex * 4 + 2]
+            );
+            const x = mainX + (j * 2 + 1) * radius;
+            const y = gridTop + ((i % plateWidth) * 2 + 1) * radius;
+
+            const rgb = hexToRgb(pixelHex);
+            const luminance = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+            const fill = luminance > 140 ? "#000000" : "#FFFFFF";
+            const stroke = luminance > 140 ? "#FFFFFF" : "#000000";
+
+            ctx.save();
+            ctx.font = `${studNumberFontSize}px Arial`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.lineWidth = Math.max(2, Math.round(scalingFactor * 0.08));
+            ctx.strokeStyle = stroke;
+            ctx.fillStyle = fill;
+            ctx.strokeText(String(studToNumber[pixelHex]), x, y);
+            ctx.fillText(String(studToNumber[pixelHex]), x, y);
+            ctx.restore();
         }
     }
 

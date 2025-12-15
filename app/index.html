@@ -1794,9 +1794,15 @@
                           style="max-width: 420px"
                         />
                       </div>
-                      <div class="checkbox" style="margin-top: 4px; margin-left: 4px">
+                      <div class="checkbox" style="margin-top: 4px; margin-left: 4px" hidden>
                         <label class="checkbox-clickable">
-                          <input type="checkbox" class="checkbox-clickable" id="high-quality-instructions-check" />
+                          <input
+                            type="checkbox"
+                            class="checkbox-clickable"
+                            id="high-quality-instructions-check"
+                            checked
+                            disabled
+                          />
                           <span style="font-size: 13px">High quality pdf</span>
                         </label>
                       </div>
@@ -1972,12 +1978,14 @@
                         Generate Depth Instructions PDF
                       </button>
                       <div id="depth-instructions-canvas-container" hidden></div>
-                      <div class="checkbox" style="margin-top: 4px; margin-left: 4px">
+                      <div class="checkbox" style="margin-top: 4px; margin-left: 4px" hidden>
                         <label class="checkbox-clickable">
                           <input
                             type="checkbox"
                             class="checkbox-clickable"
                             id="high-quality-depth-instructions-check"
+                            checked
+                            disabled
                           />
                           <span style="font-size: 13px">High quality pdf</span>
                         </label>

@@ -32,12 +32,12 @@ function incrementTransaction(count) {
 }
 
 const LOW_DPI = 48;
-const HIGH_DPI = 96;
+const HIGH_DPI = 300;
 
 function getPdfRasterQuality(isHighQuality) {
     // JPEG quality: 0..1
     // High quality should look sharp but not explode file size.
-    return isHighQuality ? 0.88 : 0.75;
+    return isHighQuality ? 0.95 : 0.85;
 }
 
 function getCanvasPdfImageData(canvas, isHighQuality) {
@@ -2824,7 +2824,7 @@ async function generateInstructions() {
             );
         }
 
-        const isHighQuality = document.getElementById("high-quality-instructions-check").checked;
+        const isHighQuality = true;
         const step4PixelArray = getPixelArrayFromCanvas(step4Canvas);
         const resultImage = isBleedthroughEnabled()
             ? revertDarkenedImage(
@@ -2875,7 +2875,7 @@ async function generateInstructions() {
         let numParts = 1;
         for (var i = 0; i < totalPlates; i++) {
             await sleep(50);
-            if ((i + 1) % (isHighQuality ? 20 : 50) === 0) {
+            if ((i + 1) % 20 === 0) {
                 addWaterMark(pdf, isHighQuality);
                 pdf.save(`Lego-Art-Remix-Instructions-Part-${numParts}.pdf`);
                 numParts++;
@@ -3006,7 +3006,7 @@ async function generateDepthInstructions() {
     disableInteraction();
 
     runStep4(async () => {
-        const isHighQuality = document.getElementById("high-quality-depth-instructions-check").checked;
+        const isHighQuality = true;
         const depthPixelArray = getPixelArrayFromCanvas(step3DepthCanvas);
 
         const usedPlatesMatrices = getUsedPlateMatrices(depthPixelArray);
@@ -3045,7 +3045,7 @@ async function generateDepthInstructions() {
         for (let i = 0; i < usedPlatesMatrices.length; i++) {
             await sleep(50);
 
-            if ((i + 1) % (isHighQuality ? 20 : 50) === 0) {
+            if ((i + 1) % 20 === 0) {
                 if (pdf != null) {
                     addWaterMark(pdf, isHighQuality);
                     pdf.save(`Lego-Art-Remix-Instructions-Part-${numParts}.pdf`);
