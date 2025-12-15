@@ -1096,6 +1096,44 @@
                   <button
                     class="btn paintbrush-controls-button"
                     type="button"
+                    id="undo-overrides-button"
+                    data-toggle="tooltip"
+                    title="Undo (Ctrl/Cmd+Z)"
+                    data-placement="top"
+                    disabled
+                  >
+                    <svg width="16" height="16" fill="currentColor" class="bi bi-arrow-counterclockwise" viewBox="0 0 16 16">
+                      <path
+                        fill-rule="evenodd"
+                        d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.418A6 6 0 1 1 8 2v1z"
+                      />
+                      <path d="M8 4.466V1.534a.25.25 0 0 1 .41-.192l1.77 1.466a.25.25 0 0 1 0 .384l-1.77 1.466A.25.25 0 0 1 8 4.466z" />
+                    </svg>
+                  </button>
+                </div>
+                <div style="margin-bottom: 4px">
+                  <button
+                    class="btn paintbrush-controls-button"
+                    type="button"
+                    id="redo-overrides-button"
+                    data-toggle="tooltip"
+                    title="Redo (Ctrl/Cmd+Y or Shift+Ctrl/Cmd+Z)"
+                    data-placement="top"
+                    disabled
+                  >
+                    <svg width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+                      <path
+                        fill-rule="evenodd"
+                        d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.418A6 6 0 1 0 8 2v1z"
+                      />
+                      <path d="M8 4.466V1.534a.25.25 0 0 0-.41-.192L5.82 2.808a.25.25 0 0 0 0 .384l1.77 1.466A.25.25 0 0 0 8 4.466z" />
+                    </svg>
+                  </button>
+                </div>
+                <div style="margin-bottom: 4px">
+                  <button
+                    class="btn paintbrush-controls-button"
+                    type="button"
                     id="clear-overrides-button"
                     data-toggle="tooltip"
                     title="Erase all paintbrush changes"

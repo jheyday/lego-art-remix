@@ -188,6 +188,7 @@ function initializeCropper() {
         cropend() {
             overridePixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
             overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
+            resetUndoRedoHistory();
         },
     });
 }
@@ -326,9 +327,93 @@ document.getElementById("bricklink-piece-button").innerHTML = PIXEL_TYPE_OPTIONS
 let overridePixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
 let overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
 
+const MAX_OVERRIDE_HISTORY = 50;
+let overrideUndoStack = [];
+let overrideRedoStack = [];
+let pendingOverrideUndoSnapshot = null;
+let step3StrokeDidMutate = false;
+
+function getOverrideSnapshot() {
+    return {
+        overridePixelArray: Array.isArray(overridePixelArray) ? overridePixelArray.slice() : [],
+        overrideDepthPixelArray: Array.isArray(overrideDepthPixelArray) ? overrideDepthPixelArray.slice() : [],
+    };
+}
+
+function applyOverrideSnapshot(snapshot) {
+    overridePixelArray = Array.isArray(snapshot?.overridePixelArray)
+        ? snapshot.overridePixelArray.slice()
+        : new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
+    overrideDepthPixelArray = Array.isArray(snapshot?.overrideDepthPixelArray)
+        ? snapshot.overrideDepthPixelArray.slice()
+        : new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
+}
+
+function updateUndoRedoButtons() {
+    const undoBtn = document.getElementById("undo-overrides-button");
+    const redoBtn = document.getElementById("redo-overrides-button");
+    if (undoBtn) {
+        undoBtn.disabled = overrideUndoStack.length === 0;
+    }
+    if (redoBtn) {
+        redoBtn.disabled = overrideRedoStack.length === 0;
+    }
+}
+
+function resetUndoRedoHistory() {
+    overrideUndoStack = [];
+    overrideRedoStack = [];
+    pendingOverrideUndoSnapshot = null;
+    step3StrokeDidMutate = false;
+    updateUndoRedoButtons();
+}
+
+function pushUndoSnapshot(snapshot) {
+    if (!snapshot) {
+        return;
+    }
+    overrideUndoStack.push(snapshot);
+    if (overrideUndoStack.length > MAX_OVERRIDE_HISTORY) {
+        overrideUndoStack.shift();
+    }
+    overrideRedoStack = [];
+    updateUndoRedoButtons();
+}
+
+function undoOverrides() {
+    if (overrideUndoStack.length === 0) {
+        return;
+    }
+    const current = getOverrideSnapshot();
+    const prev = overrideUndoStack.pop();
+    overrideRedoStack.push(current);
+    applyOverrideSnapshot(prev);
+    pendingOverrideUndoSnapshot = null;
+    step3StrokeDidMutate = false;
+    disableInteraction();
+    runStep3();
+    updateUndoRedoButtons();
+}
+
+function redoOverrides() {
+    if (overrideRedoStack.length === 0) {
+        return;
+    }
+    const current = getOverrideSnapshot();
+    const next = overrideRedoStack.pop();
+    overrideUndoStack.push(current);
+    applyOverrideSnapshot(next);
+    pendingOverrideUndoSnapshot = null;
+    step3StrokeDidMutate = false;
+    disableInteraction();
+    runStep3();
+    updateUndoRedoButtons();
+}
+
 function handleResolutionChange() {
     overridePixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
     overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
+    resetUndoRedoHistory();
     document.getElementById("width-text").title = `${(targetResolution[0] * PIXEL_WIDTH_CM).toFixed(1)} cm, ${(
         targetResolution[0] *
         PIXEL_WIDTH_CM *
@@ -365,13 +450,54 @@ document.getElementById("height-slider").addEventListener(
     false
 );
 document.getElementById("clear-overrides-button").addEventListener("click", () => {
+    pushUndoSnapshot(getOverrideSnapshot());
     overridePixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
-    runStep2();
+    disableInteraction();
+    runStep3();
 });
 document.getElementById("clear-depth-overrides-button").addEventListener("click", () => {
+    pushUndoSnapshot(getOverrideSnapshot());
     overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
-    runStep2();
+    disableInteraction();
+    runStep3();
 });
+
+const undoOverridesButton = document.getElementById("undo-overrides-button");
+if (undoOverridesButton) {
+    undoOverridesButton.addEventListener("click", undoOverrides);
+}
+const redoOverridesButton = document.getElementById("redo-overrides-button");
+if (redoOverridesButton) {
+    redoOverridesButton.addEventListener("click", redoOverrides);
+}
+
+window.addEventListener(
+    "keydown",
+    (e) => {
+        const mod = e.ctrlKey || e.metaKey;
+        if (!mod) {
+            return;
+        }
+        const active = document.activeElement;
+        if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) {
+            return;
+        }
+
+        const key = (e.key || "").toLowerCase();
+        if (key === "z") {
+            e.preventDefault();
+            if (e.shiftKey) {
+                redoOverrides();
+            } else {
+                undoOverrides();
+            }
+        } else if (key === "y") {
+            e.preventDefault();
+            redoOverrides();
+        }
+    },
+    false
+);
 
 document.getElementById("resolution-limit-increase-button").addEventListener("click", () => {
     document.getElementById("height-slider").max = 256;
@@ -1144,6 +1270,7 @@ document.getElementById("contrast-decrement").addEventListener(
 function onDepthMapCountChange() {
     const numLevels = Number(document.getElementById("num-depth-levels-slider").value);
     overrideDepthPixelArray = new Array(targetResolution[0] * targetResolution[1] * 4).fill(null);
+    resetUndoRedoHistory();
     document.getElementById("num-depth-levels-text").innerHTML = numLevels;
     const inputs = [];
     const inputsContainer = document.getElementById("depth-threshold-sliders-containers");
@@ -1572,6 +1699,9 @@ function onDepthOverrideChange(row, col, isIncrease) {
     if (!document.getElementById("step-3-depth-1-collapse").className.includes("show")) {
         return; // only override if the refine depth section is expanded
     }
+
+    pushUndoSnapshot(getOverrideSnapshot());
+
     const pixelIndex = 4 * (row * targetResolution[0] + col);
     const step2DepthImagePixels = getPixelArrayFromCanvas(step2DepthCanvas);
     const currentVal =
@@ -1650,6 +1780,13 @@ let step3CanvasPixelsForHover = null; // only used for perf
 
 function onStep3PaintingMouseLift() {
     activePaintbrushHex = null;
+
+    if (pendingOverrideUndoSnapshot && step3StrokeDidMutate) {
+        pushUndoSnapshot(pendingOverrideUndoSnapshot);
+    }
+    pendingOverrideUndoSnapshot = null;
+    step3StrokeDidMutate = false;
+
     // propogate changes
     if (!isStep3ViewExpanded && wasPaintbrushUsed) {
         disableInteraction();
@@ -1662,6 +1799,12 @@ step3CanvasUpscaled.addEventListener(
     "mousedown",
     function (event) {
         wasPaintbrushUsed = true;
+
+        if (["paintbrush-tool-dropdown-option", "eraser-tool-dropdown-option"].includes(selectedPaintbrushTool)) {
+            pendingOverrideUndoSnapshot = getOverrideSnapshot();
+            step3StrokeDidMutate = false;
+        }
+
         const rawRow =
             event.clientY -
             step3CanvasUpscaled.getBoundingClientRect().y -
@@ -1793,6 +1936,9 @@ function onMouseMoveOverStep3Canvas(event) {
 
         if (selectedPaintbrushTool === "paintbrush-tool-dropdown-option") {
             const colorRGB = hexToRgb(activePaintbrushHex);
+            if (!pendingOverrideUndoSnapshot) {
+                pendingOverrideUndoSnapshot = getOverrideSnapshot();
+            }
             // we want to paint - update the override pixel array
             // do stuff directly on the canvas for perf
             ctx.beginPath();
@@ -1801,18 +1947,32 @@ function onMouseMoveOverStep3Canvas(event) {
             ctx.fill();
 
             // update the override pixel array in place
-            overridePixelArray[pixelIndex] = colorRGB[0];
-            overridePixelArray[pixelIndex + 1] = colorRGB[1];
-            overridePixelArray[pixelIndex + 2] = colorRGB[2];
+            if (
+                overridePixelArray[pixelIndex] !== colorRGB[0] ||
+                overridePixelArray[pixelIndex + 1] !== colorRGB[1] ||
+                overridePixelArray[pixelIndex + 2] !== colorRGB[2]
+            ) {
+                overridePixelArray[pixelIndex] = colorRGB[0];
+                overridePixelArray[pixelIndex + 1] = colorRGB[1];
+                overridePixelArray[pixelIndex + 2] = colorRGB[2];
+                step3StrokeDidMutate = true;
+            }
         } else if (selectedPaintbrushTool === "bucket-tool-dropdown-option") {
-            // Fill a contiguous region of the currently visible color.
-            bucketFillStep3(row, col, activePaintbrushHex);
+            const targetHex = getStep3VisibleHexAt(row, col);
+            if (targetHex && targetHex !== activePaintbrushHex) {
+                pushUndoSnapshot(getOverrideSnapshot());
+                // Fill a contiguous region of the currently visible color.
+                bucketFillStep3(row, col, activePaintbrushHex);
+            }
             activePaintbrushHex = null; // prevent repeated fills on mousemove
             disableInteraction();
             runStep3();
             wasPaintbrushUsed = false;
         } else if (selectedPaintbrushTool === "eraser-tool-dropdown-option") {
             // null out the override
+            if (!pendingOverrideUndoSnapshot) {
+                pendingOverrideUndoSnapshot = getOverrideSnapshot();
+            }
             if (
                 overridePixelArray[pixelIndex] != null &&
                 overridePixelArray[pixelIndex + 1] != null &&
@@ -1838,6 +1998,7 @@ function onMouseMoveOverStep3Canvas(event) {
                 overridePixelArray[pixelIndex] = null;
                 overridePixelArray[pixelIndex + 1] = null;
                 overridePixelArray[pixelIndex + 2] = null;
+                step3StrokeDidMutate = true;
             }
         } else {
             // dropper tool
