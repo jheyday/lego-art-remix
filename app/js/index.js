@@ -34,6 +34,16 @@ function incrementTransaction(count) {
 const LOW_DPI = 48;
 const HIGH_DPI = 96;
 
+function getPdfRasterQuality(isHighQuality) {
+    // JPEG quality: 0..1
+    // High quality should look sharp but not explode file size.
+    return isHighQuality ? 0.88 : 0.75;
+}
+
+function getCanvasPdfImageData(canvas, isHighQuality) {
+    return canvas.toDataURL("image/jpeg", getPdfRasterQuality(isHighQuality));
+}
+
 const interactionSelectors = [
     "input-image-selector",
     "input-image-selector-hidden",
@@ -101,7 +111,14 @@ function addImageToPdfFitPage(pdf, imgData, imgType, sourceWidth, sourceHeight) 
 
     const x = (pageWidth - w) / 2;
     const y = (availableHeight - h) / 2;
-    pdf.addImage(imgData, imgType, x, y, w, h);
+
+    // For JPEGs, enable jsPDF's built-in image compression. This significantly reduces file size
+    // while keeping perceived quality high (especially for rasterized canvas pages).
+    if (String(imgType).toUpperCase() === "JPEG") {
+        pdf.addImage(imgData, imgType, x, y, w, h, undefined, "FAST");
+    } else {
+        pdf.addImage(imgData, imgType, x, y, w, h);
+    }
 
     if (footerText) {
         pdf.setFontSize(10);
@@ -2836,12 +2853,13 @@ async function generateInstructions() {
         );
         setDPI(titlePageCanvas, isHighQuality ? HIGH_DPI : LOW_DPI);
 
-        const imgData = titlePageCanvas.toDataURL("image/png", 1.0);
+        const imgData = getCanvasPdfImageData(titlePageCanvas, isHighQuality);
 
         let pdf = new jsPDF({
             orientation: titlePageCanvas.width < titlePageCanvas.height ? "p" : "l",
             unit: "mm",
             format: "a4",
+            compress: true,
         });
 
         const totalPlates = resultImage.length / (4 * sectionSize * sectionSize);
@@ -2852,7 +2870,7 @@ async function generateInstructions() {
         document.getElementById("pdf-progress-container").hidden = false;
         document.getElementById("download-instructions-button").hidden = true;
 
-        addImageToPdfFitPage(pdf, imgData, "PNG", titlePageCanvas.width, titlePageCanvas.height, footerText);
+        addImageToPdfFitPage(pdf, imgData, "JPEG", titlePageCanvas.width, titlePageCanvas.height, footerText);
 
         let numParts = 1;
         for (var i = 0; i < totalPlates; i++) {
@@ -2865,6 +2883,7 @@ async function generateInstructions() {
                     orientation: titlePageCanvas.width < titlePageCanvas.height ? "p" : "l",
                     unit: "mm",
                     format: "a4",
+                    compress: true,
                 });
             } else {
                 pdf.addPage();
@@ -2909,9 +2928,9 @@ async function generateInstructions() {
             );
 
             setDPI(instructionPageCanvas, isHighQuality ? HIGH_DPI : LOW_DPI);
-            const imgData = instructionPageCanvas.toDataURL(`image${i + 1}/jpeg`, i);
+            const imgData = getCanvasPdfImageData(instructionPageCanvas, isHighQuality);
 
-            addImageToPdfFitPage(pdf, imgData, "PNG", instructionPageCanvas.width, instructionPageCanvas.height, footerText);
+            addImageToPdfFitPage(pdf, imgData, "JPEG", instructionPageCanvas.width, instructionPageCanvas.height, footerText);
         }
 
         addWaterMark(pdf, isHighQuality);
@@ -3011,15 +3030,16 @@ async function generateDepthInstructions() {
         );
         setDPI(titlePageCanvas, isHighQuality ? HIGH_DPI : LOW_DPI);
 
-        const imgData = titlePageCanvas.toDataURL(`image_title/jpeg`, 1.0);
+        const imgData = getCanvasPdfImageData(titlePageCanvas, isHighQuality);
 
         let pdf = new jsPDF({
             orientation: titlePageCanvas.width < titlePageCanvas.height ? "p" : "l",
             unit: "mm",
             format: "a4",
+            compress: true,
         });
 
-        addImageToPdfFitPage(pdf, imgData, "PNG", titlePageCanvas.width, titlePageCanvas.height);
+        addImageToPdfFitPage(pdf, imgData, "JPEG", titlePageCanvas.width, titlePageCanvas.height);
 
         let numParts = 1;
         for (let i = 0; i < usedPlatesMatrices.length; i++) {
@@ -3036,6 +3056,7 @@ async function generateDepthInstructions() {
                     orientation: titlePageCanvas.width < titlePageCanvas.height ? "p" : "l",
                     unit: "mm",
                     format: "a4",
+                    compress: true,
                 });
             } else {
                 pdf.addPage();
@@ -3049,9 +3070,9 @@ async function generateDepthInstructions() {
             generateDepthInstructionPage(perDepthLevelMatrices, SCALING_FACTOR, instructionPageCanvas, i + 1);
             setDPI(instructionPageCanvas, isHighQuality ? HIGH_DPI : LOW_DPI);
 
-            const imgData = instructionPageCanvas.toDataURL(`image${i + 1}/jpeg`, i);
+            const imgData = getCanvasPdfImageData(instructionPageCanvas, isHighQuality);
 
-            addImageToPdfFitPage(pdf, imgData, "PNG", instructionPageCanvas.width, instructionPageCanvas.height);
+            addImageToPdfFitPage(pdf, imgData, "JPEG", instructionPageCanvas.width, instructionPageCanvas.height);
 
             document.getElementById("depth-pdf-progress-bar").style.width = `${
                 ((i + 1) * 100) / (usedPlatesMatrices.length + 1)
