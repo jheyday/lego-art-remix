@@ -1597,7 +1597,13 @@
             >
               <canvas id="step-4-canvas" hidden></canvas>
               <canvas id="bricklink-cache-canvas" hidden></canvas>
-              <canvas id="step-4-canvas-upscaled" style="width: 100%"></canvas>
+              <div id="step-4-canvas-wrapper" style="position: relative; width: 100%">
+                <canvas id="step-4-canvas-upscaled" style="width: 100%"></canvas>
+                <canvas
+                  id="step-4-highlight-canvas"
+                  style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none"
+                ></canvas>
+              </div>
               <h4>Step 4</h4>
               <small className="step-header-subtitle">Correct for available pieces, if piece counts are limited</small>
               <br />

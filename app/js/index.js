@@ -179,6 +179,8 @@ const step4Canvas = document.getElementById("step-4-canvas");
 const step4CanvasContext = step4Canvas.getContext("2d");
 const step4CanvasUpscaled = document.getElementById("step-4-canvas-upscaled");
 const step4CanvasUpscaledContext = step4CanvasUpscaled.getContext("2d");
+const step4HighlightCanvas = document.getElementById("step-4-highlight-canvas");
+const step4HighlightCanvasContext = step4HighlightCanvas.getContext("2d");
 const step4Canvas3dUpscaled = document.getElementById("step-4-canvas-3d-upscaled");
 
 const bricklinkCacheCanvas = document.getElementById("bricklink-cache-canvas");
@@ -361,6 +363,88 @@ let overrideUndoStack = [];
 let overrideRedoStack = [];
 let pendingOverrideUndoSnapshot = null;
 let step3StrokeDidMutate = false;
+
+let alignedPixelArray;
+let alignedDepthPixelArray;
+
+let step4HighlightTimer = null;
+let step4HighlightTick = 0;
+let step4HighlightHex = null;
+let lastStep4PixelsToDraw = null;
+
+function clearStep4Highlight() {
+    if (step4HighlightTimer != null) {
+        clearInterval(step4HighlightTimer);
+        step4HighlightTimer = null;
+    }
+    step4HighlightTick = 0;
+    step4HighlightHex = null;
+    step4HighlightCanvasContext.clearRect(0, 0, step4HighlightCanvas.width, step4HighlightCanvas.height);
+}
+
+function drawStep4HighlightFrame(pixelHex, intensity) {
+    if (!pixelHex || lastStep4PixelsToDraw == null) {
+        return;
+    }
+    const w = targetResolution[0];
+    const h = targetResolution[1];
+    const s = SCALING_FACTOR;
+
+    const ctx = step4HighlightCanvasContext;
+    ctx.clearRect(0, 0, step4HighlightCanvas.width, step4HighlightCanvas.height);
+
+    ctx.globalAlpha = Math.min(0.55, 0.25 + intensity * 0.35);
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, w * s, h * s);
+
+    ctx.globalAlpha = Math.min(0.9, 0.45 + intensity * 0.45);
+    ctx.fillStyle = "#ffff00";
+
+    for (let i = 0; i < lastStep4PixelsToDraw.length / 4; i++) {
+        const base = i * 4;
+        const hex = rgbToHex(
+            lastStep4PixelsToDraw[base],
+            lastStep4PixelsToDraw[base + 1],
+            lastStep4PixelsToDraw[base + 2]
+        );
+        if (hex === pixelHex) {
+            const x = (i % w) * s;
+            const y = Math.floor(i / w) * s;
+            ctx.fillRect(x, y, s, s);
+        }
+    }
+
+    ctx.globalAlpha = 1;
+}
+
+function flashStep4Color(pixelHex) {
+    if (!pixelHex) {
+        return;
+    }
+    if (step4HighlightHex === pixelHex) {
+        clearStep4Highlight();
+        return;
+    }
+
+    clearStep4Highlight();
+    step4HighlightHex = pixelHex;
+    step4HighlightTick = 0;
+
+    const totalTicks = 10;
+    step4HighlightTimer = setInterval(() => {
+        step4HighlightTick++;
+        const phase = step4HighlightTick / totalTicks;
+        const on = step4HighlightTick % 2 === 1;
+        if (on) {
+            drawStep4HighlightFrame(step4HighlightHex, 1 - phase * 0.3);
+        } else {
+            step4HighlightCanvasContext.clearRect(0, 0, step4HighlightCanvas.width, step4HighlightCanvas.height);
+        }
+        if (step4HighlightTick >= totalTicks) {
+            clearStep4Highlight();
+        }
+    }, 250);
+}
 
 function getOverrideSnapshot() {
     return {
@@ -2511,6 +2595,11 @@ function runStep4(asyncCallback) {
                 step3VariablePixelPieceDimensions
             );
 
+            step4HighlightCanvas.width = step4CanvasUpscaled.width;
+            step4HighlightCanvas.height = step4CanvasUpscaled.height;
+            lastStep4PixelsToDraw = pixelsToDraw;
+            clearStep4Highlight();
+
             // create stud map result table
             const usedPixelsStudMap = getUsedPixelsStudMap(pixelsToDraw);
             const usedPixelsTableBody = document.getElementById("studs-used-table-body");
@@ -2553,6 +2642,8 @@ function runStep4(asyncCallback) {
 
                 const colorCell = document.createElement("td");
                 const colorSquare = getColorSquare(color);
+                colorCell.style.cursor = "pointer";
+                colorCell.onclick = () => flashStep4Color(color);
                 colorCell.appendChild(colorSquare);
                 const colorLabel = document.createElement("small");
                 colorLabel.innerHTML = HEX_TO_COLOR_NAME[color] || color;
