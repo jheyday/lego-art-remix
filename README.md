@@ -1,10 +1,15 @@
+Now with saving, undo/redo, floodfill and custom section sizes.
+
+
+
+
 # [Lego-Art-Remix.com](https://lego-art-remix.com/)
 
 The Intelligent, Easy to Use Lego Mosaic Maker
 
 This project is not affiliated with The Lego Group
 
-Made with ♥ by Deb
+Made with ♥ by [Deb](https://github.com/debkbanerji)
 
 ### Media
 
